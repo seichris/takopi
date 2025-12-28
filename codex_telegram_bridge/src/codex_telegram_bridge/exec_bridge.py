@@ -17,7 +17,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 import typer
 
-from .config import config_get, load_telegram_config, resolve_chat_ids
+from .config import load_telegram_config
 from .constants import TELEGRAM_HARD_LIMIT
 from .exec_render import ExecProgressRenderer, ExecRenderState, render_event_cli
 from .rendering import render_markdown
@@ -342,18 +342,26 @@ def run(
 ) -> None:
     setup_file_logger(log_file if log_file else None)
     config = load_telegram_config()
-    token = config_get(config, "bot_token") or ""
-    db_path = config_get(config, "bridge_db") or "./bridge_routes.sqlite3"
-    chat_ids = resolve_chat_ids(config)
-    allowed = chat_ids
-    startup_ids = chat_ids
-    startup_msg = config_get(config, "startup_message") or "✅ exec_bridge started (codex exec)."
+    token = config["bot_token"]
+    db_path = config.get("bridge_db", "./bridge_routes.sqlite3")
+
+    def _as_int_set(value: Any) -> set[int]:
+        if isinstance(value, int):
+            return {value}
+        if isinstance(value, list):
+            return {int(v) for v in value}
+        raise TypeError(f"expected int or list[int], got {type(value).__name__}")
+
+    allowed = _as_int_set(config.get("allowed_chat_ids", config["chat_id"]))
+    startup_ids = _as_int_set(config.get("startup_chat_ids", config["chat_id"]))
+
+    startup_msg = config.get("startup_message", "✅ exec_bridge started (codex exec).")
     startup_pwd = os.getcwd()
     startup_msg = f"{startup_msg}\nPWD: {startup_pwd}"
 
-    codex_cmd = config_get(config, "codex_cmd") or "codex"
-    workspace = workdir if workdir is not None else config_get(config, "codex_workspace")
-    raw_exec_args = config_get(config, "codex_exec_args") or ""
+    codex_cmd = config.get("codex_cmd", "codex")
+    workspace = workdir if workdir is not None else config.get("codex_workspace")
+    raw_exec_args = config.get("codex_exec_args", "")
     if isinstance(raw_exec_args, list):
         extra_args = [str(v) for v in raw_exec_args]
     else:
@@ -384,11 +392,7 @@ def run(
     store = RouteStore(db_path)
     runner = CodexExecRunner(codex_cmd=codex_cmd, workspace=workspace, extra_args=extra_args)
 
-    max_workers = config_get(config, "max_workers")
-    if isinstance(max_workers, str):
-        max_workers = int(max_workers) if max_workers.strip() else None
-    elif not isinstance(max_workers, int):
-        max_workers = None
+    max_workers = config.get("max_workers")
     pool = ThreadPoolExecutor(max_workers=max_workers or 4)
     offset: Optional[int] = None
     ignore_backlog = bool(ignore_backlog)
