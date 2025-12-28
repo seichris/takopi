@@ -350,10 +350,10 @@ def run(
         "--log-file",
         help="Write detailed debug logs to this file (set to empty to disable).",
     ),
-    workdir: str | None = typer.Option(
+    cd: str | None = typer.Option(
         None,
-        "--workdir",
-        help="Override codex workspace (--cd) for this exec-bridge run.",
+        "--cd",
+        help="Pass through to `codex --cd` (defaults to `cd` in ~/.codex/telegram.toml).",
     ),
     model: str | None = typer.Option(
         None,
@@ -372,7 +372,7 @@ def run(
     codex_cmd = shutil.which("codex")
     if not codex_cmd:
         raise RuntimeError("codex not found on PATH")
-    workspace = workdir if workdir is not None else config.get("codex_workspace")
+    workspace = cd if cd is not None else config.get("cd")
     raw_exec_args = config.get("codex_exec_args", "")
     if isinstance(raw_exec_args, list):
         extra_args = [str(v) for v in raw_exec_args]
@@ -405,8 +405,7 @@ def run(
         codex_cmd=codex_cmd, workspace=workspace, extra_args=extra_args
     )
 
-    max_workers = config.get("max_workers")
-    pool = ThreadPoolExecutor(max_workers=max_workers or 4)
+    pool = ThreadPoolExecutor(max_workers=16)
     offset: int | None = None
     ignore_backlog = bool(ignore_backlog)
 
