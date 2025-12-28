@@ -329,6 +329,11 @@ def run(
         "--log-file",
         help="Write detailed debug logs to this file (set to empty to disable).",
     ),
+    workdir: Optional[str] = typer.Option(
+        None,
+        "--workdir",
+        help="Override codex workspace (--cd) for this exec-bridge run.",
+    ),
 ) -> None:
     setup_file_logger(log_file if log_file else None)
     config = load_telegram_config()
@@ -342,7 +347,7 @@ def run(
     startup_msg = f"{startup_msg}\nPWD: {startup_pwd}"
 
     codex_cmd = config_get(config, "codex_cmd") or "codex"
-    workspace = config_get(config, "codex_workspace")
+    workspace = workdir if workdir is not None else config_get(config, "codex_workspace")
     raw_exec_args = config_get(config, "codex_exec_args") or ""
     if isinstance(raw_exec_args, list):
         extra_args = [str(v) for v in raw_exec_args]

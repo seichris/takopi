@@ -26,7 +26,7 @@ chat_id = 123456789
 Optional keys (by mode):
 
 - common: `bridge_db`, `allowed_chat_ids`, `startup_chat_ids`
-- exec/resume: `startup_message`, `codex_cmd`, `codex_workspace`, `codex_exec_args`, `max_workers`
+- exec/resume: `startup_message`, `codex_cmd`, `codex_workspace`, `codex_exec_args`, `max_workers`, `codex_io_mode`, `codex_command_timeout_s`, `codex_no_child_timeout_s`
 - MCP server: `codex_mcp_cmd`, `codex_workspace`, `codex_sandbox`, `codex_approval_policy`
 
 ## Option 1: exec/resume
@@ -43,6 +43,10 @@ Optional flags:
 - `--progress-silent/--no-progress-silent` (default silent)
 - `--final-notify/--no-final-notify` (default notify via new message)
 - `--ignore-backlog/--process-backlog` (default ignore pending updates)
+- `--codex-io-mode [threads|selectors|asyncio]` (default `threads`)
+- `--codex-command-timeout FLOAT` (default: disabled, debug defaults to 60s)
+- `--codex-no-child-timeout FLOAT` (default `15.0`, set `0` to disable)
+- `--workdir PATH` (override `codex_workspace`)
 
 ## Option 2: MCP server
 

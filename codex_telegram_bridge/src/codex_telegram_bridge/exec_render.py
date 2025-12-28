@@ -93,6 +93,10 @@ def _format_tool_call(server: str, tool: str) -> str:
     name = ".".join(part for part in (server, tool) if part)
     return name or "tool"
 
+def _is_command_log_line(line: str) -> bool:
+    return f"{STATUS_DONE} ran:" in line
+
+
 def _extract_numeric_id(item_id: Optional[object], fallback: Optional[int] = None) -> Optional[int]:
     if isinstance(item_id, int):
         return item_id
@@ -351,7 +355,10 @@ class ExecProgressRenderer:
 
     def render_final(self, elapsed_s: float, answer: str, status: str = "done") -> str:
         header = _format_header(elapsed_s, self.state.last_turn, label=status)
-        body = self._assemble(header, list(self.state.recent_actions))
+        lines = list(self.state.recent_actions)
+        if status == "done":
+            lines = [line for line in lines if not _is_command_log_line(line)]
+        body = self._assemble(header, lines)
         answer = (answer or "").strip()
         if answer:
             body = body + "\n\n" + answer
