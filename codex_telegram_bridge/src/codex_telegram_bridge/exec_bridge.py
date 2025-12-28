@@ -53,6 +53,8 @@ class ProgressEditor:
         chat_id: int,
         message_id: int,
         edit_every_s: float,
+        initial_text: Optional[str] = None,
+        initial_entities: Optional[list[dict[str, Any]]] = None,
     ) -> None:
         self.bot = bot
         self.chat_id = chat_id
@@ -63,6 +65,10 @@ class ProgressEditor:
         self._pending: Optional[tuple[str, Optional[list[dict[str, Any]]]]] = None
         self._last_sent: Optional[tuple[str, Optional[list[dict[str, Any]]]]] = None
         self._last_edit_at = 0.0
+
+        if initial_text is not None:
+            self._last_sent = (initial_text, initial_entities)
+            self._last_edit_at = time.monotonic()
 
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -393,7 +399,14 @@ def run(
             log(f"[handle] failed to send progress message chat_id={chat_id}: {e}")
 
         if progress_id is not None:
-            progress = ProgressEditor(bot, chat_id, progress_id, edit_every_s)
+            progress = ProgressEditor(
+                bot,
+                chat_id,
+                progress_id,
+                edit_every_s,
+                initial_text=initial_rendered,
+                initial_entities=initial_entities or None,
+            )
 
         def on_event(evt: Dict[str, Any]) -> None:
             event_type = evt.get("type")
