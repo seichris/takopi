@@ -20,7 +20,7 @@ import typer
 
 from .config import load_telegram_config
 from .constants import TELEGRAM_HARD_LIMIT
-from .exec_render import ExecProgressRenderer, ExecRenderState, render_event_cli
+from .exec_render import ExecProgressRenderer, render_event_cli
 from .rendering import render_markdown
 from .telegram_client import TelegramClient
 
@@ -224,7 +224,7 @@ class CodexExecRunner:
         last_agent_text: Optional[str] = None
         saw_agent_message = False
 
-        cli_state = ExecRenderState()
+        cli_last_turn = None
 
         for line in proc.stdout:
             line = line.strip()
@@ -234,7 +234,8 @@ class CodexExecRunner:
                 evt = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            for out in render_event_cli(evt, cli_state):
+            cli_last_turn, out_lines = render_event_cli(evt, cli_last_turn)
+            for out in out_lines:
                 log(f"[codex] {out}")
             if on_event is not None:
                 try:

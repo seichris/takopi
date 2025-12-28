@@ -1,6 +1,6 @@
 import json
 
-from codex_telegram_bridge.exec_render import ExecProgressRenderer, ExecRenderState, render_event_cli
+from codex_telegram_bridge.exec_render import ExecProgressRenderer, render_event_cli
 
 
 def _loads(lines: str) -> list[dict]:
@@ -20,10 +20,11 @@ SAMPLE_STREAM = """
 
 
 def test_render_event_cli_sample_stream() -> None:
-    state = ExecRenderState()
+    last_turn = None
     out: list[str] = []
     for evt in _loads(SAMPLE_STREAM):
-        out.extend(render_event_cli(evt, state))
+        last_turn, lines = render_event_cli(evt, last_turn)
+        out.extend(lines)
 
     assert out == [
         "thread started",
