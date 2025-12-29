@@ -30,6 +30,11 @@ takopi
 uvx takopi
 ```
 
+### Setup
+
+1. **Start the bot**: Send `/start` to your bot in Telegram—it can't message you until you do
+2. **Trust your working directory**: Run `codex` once interactively in your project directory (must be a git repo) to add it to trusted directories
+
 ### Configuration
 
 Create `~/.codex/takopi.toml` (or `.codex/takopi.toml` for a repo-local config):
