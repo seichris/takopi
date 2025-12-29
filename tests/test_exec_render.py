@@ -11,7 +11,10 @@ def _loads(lines: str) -> list[dict]:
 
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "codex.jsonl"
 ALL_FORMATS_FIXTURE_PATH = (
-    Path(__file__).resolve().parent.parent / "codex_exec_json_all_formats.jsonl"
+    Path(__file__).resolve().parent / "fixtures" / "codex_exec_json_all_formats.jsonl"
+)
+ALL_FORMATS_GOLDEN_PATH = (
+    Path(__file__).resolve().parent / "fixtures" / "codex_exec_json_all_formats.txt"
 )
 
 SAMPLE_STREAM = """
@@ -89,6 +92,18 @@ def test_render_event_cli_all_formats_fixture() -> None:
     )
     assert "assistant:" in out
     assert any("Legacy schema example" in line for line in out)
+
+
+def test_render_event_cli_all_formats_golden() -> None:
+    events = _loads(ALL_FORMATS_FIXTURE_PATH.read_text(encoding="utf-8"))
+    last_turn = None
+    out: list[str] = []
+    for evt in events:
+        last_turn, lines = render_event_cli(evt, last_turn)
+        out.extend(lines)
+
+    expected = ALL_FORMATS_GOLDEN_PATH.read_text(encoding="utf-8").rstrip("\n")
+    assert "\n".join(out) == expected
 
 
 def test_progress_renderer_renders_progress_and_final() -> None:
