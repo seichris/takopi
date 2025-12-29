@@ -8,9 +8,16 @@ from codex_telegram_bridge.exec_bridge import extract_session_id, truncate_for_t
 
 def test_extract_session_id_finds_uuid_v7() -> None:
     uuid = "019b66fc-64c2-7a71-81cd-081c504cfeb2"
-    text = f"resume session `{uuid}` please"
+    text = f"resume: `{uuid}`"
 
     assert extract_session_id(text) == uuid
+
+
+def test_extract_session_id_requires_resume_line() -> None:
+    uuid = "019b66fc-64c2-7a71-81cd-081c504cfeb2"
+    text = f"here is a uuid {uuid}"
+
+    assert extract_session_id(text) is None
 
 
 def test_truncate_for_telegram_preserves_resume_line() -> None:

@@ -24,16 +24,19 @@ from .rendering import render_markdown
 from .telegram_client import TelegramClient
 
 logger = logging.getLogger(__name__)
-UUID_PATTERN = re.compile(
-    r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"
+UUID_PATTERN_TEXT = r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"
+UUID_PATTERN = re.compile(UUID_PATTERN_TEXT, re.IGNORECASE)
+RESUME_LINE = re.compile(
+    rf"^\s*resume\s*:\s*`?(?P<id>{UUID_PATTERN_TEXT})`?\s*$",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 
 def extract_session_id(text: str | None) -> str | None:
     if not text:
         return None
-    if m := UUID_PATTERN.search(text):
-        return m.group(0)
+    if m := RESUME_LINE.search(text):
+        return m.group("id")
     return None
 
 
