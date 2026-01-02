@@ -1,9 +1,17 @@
 # changelog
 
-## unreleased
+## v0.4.0 (2026-01-02)
+
+### changes
 
 - add auto-router runner selection with configurable default engine
 - add `/cancel` + `/{engine}` command menu sync on startup
+- show engine name in progress and final message headers
+- filter command log lines from final output for cleaner answers
+
+### fixes
+
+- improve codex exec error rendering with stderr extraction
 
 ## v0.3.0 (2026-01-01)
 
