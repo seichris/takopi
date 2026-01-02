@@ -2,23 +2,67 @@
 
 from __future__ import annotations
 
+import re
 import textwrap
 from collections import deque
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+from markdown_it import MarkdownIt
+from sulguk import transform_html
 
 from .model import Action, ActionEvent, ResumeToken, StartedEvent, TakopiEvent
 from .utils.paths import relativize_path
 
-STATUS_RUNNING = "▸"
-STATUS_UPDATE = "↻"
-STATUS_DONE = "✓"
-STATUS_FAIL = "✗"
+STATUS = {"running": "▸", "update": "↻", "done": "✓", "fail": "✗"}
 HEADER_SEP = " · "
 HARD_BREAK = "  \n"
 
 MAX_PROGRESS_CMD_LEN = 300
 MAX_FILE_CHANGES_INLINE = 3
+
+
+@dataclass(frozen=True)
+class MarkdownParts:
+    header: str
+    body: str | None = None
+    footer: str | None = None
+
+
+def assemble_markdown_parts(parts: MarkdownParts) -> str:
+    return "\n\n".join(
+        chunk for chunk in (parts.header, parts.body, parts.footer) if chunk
+    )
+
+
+def render_markdown(md: str) -> tuple[str, list[dict[str, Any]]]:
+    md_renderer = MarkdownIt("commonmark", {"html": False})
+    html = md_renderer.render(md or "")
+    rendered = transform_html(html)
+
+    text = re.sub(r"(?m)^(\s*)•", r"\1-", rendered.text)
+
+    entities = [dict(e) for e in rendered.entities]
+    return text, entities
+
+
+def trim_body(body: str | None) -> str | None:
+    if not body:
+        return None
+    if len(body) > 3500:
+        body = body[: 3500 - 1] + "…"
+    return body if body.strip() else None
+
+
+def prepare_telegram(parts: MarkdownParts) -> tuple[str, list[dict[str, Any]]]:
+    trimmed = MarkdownParts(
+        header=parts.header or "",
+        body=trim_body(parts.body),
+        footer=parts.footer,
+    )
+    return render_markdown(assemble_markdown_parts(trimmed))
 
 
 def format_changed_file_path(path: str, *, base_dir: Path | None = None) -> str:
@@ -36,9 +80,12 @@ def format_elapsed(elapsed_s: float) -> str:
     return f"{seconds}s"
 
 
-def format_header(elapsed_s: float, item: int | None, label: str) -> str:
+def format_header(
+    elapsed_s: float, item: int | None, *, label: str, engine: str
+) -> str:
     elapsed = format_elapsed(elapsed_s)
-    parts = [label, elapsed]
+    parts = [label, engine]
+    parts.append(elapsed)
     if item is not None:
         parts.append(f"step {item}")
     return HEADER_SEP.join(parts)
@@ -47,24 +94,26 @@ def format_header(elapsed_s: float, item: int | None, label: str) -> str:
 def shorten(text: str, width: int | None) -> str:
     if width is None:
         return text
+    if width <= 0:
+        return ""
+    if len(text) <= width:
+        return text
     return textwrap.shorten(text, width=width, placeholder="…")
 
 
-def action_status_symbol(
-    action: Action, *, completed: bool, ok: bool | None = None
-) -> str:
+def action_status(action: Action, *, completed: bool, ok: bool | None = None) -> str:
     if not completed:
-        return STATUS_RUNNING
+        return STATUS["running"]
     if ok is not None:
-        return STATUS_DONE if ok else STATUS_FAIL
+        return STATUS["done"] if ok else STATUS["fail"]
     detail = action.detail or {}
     exit_code = detail.get("exit_code")
     if isinstance(exit_code, int) and exit_code != 0:
-        return STATUS_FAIL
-    return STATUS_DONE
+        return STATUS["fail"]
+    return STATUS["done"]
 
 
-def action_exit_suffix(action: Action) -> str:
+def action_suffix(action: Action) -> str:
     detail = action.detail or {}
     exit_code = detail.get("exit_code")
     if isinstance(exit_code, int) and exit_code != 0:
@@ -118,17 +167,25 @@ def format_action_title(action: Action, *, command_width: int | None) -> str:
     return shorten(title, command_width)
 
 
-def phase_status_and_suffix(event: ActionEvent) -> tuple[str, str]:
-    action = event.action
-    match event.phase:
-        case "completed":
-            status = action_status_symbol(action, completed=True, ok=event.ok)
-            suffix = action_exit_suffix(action)
-            return status, suffix
-        case "updated":
-            return STATUS_UPDATE, ""
-        case _:
-            return STATUS_RUNNING, ""
+def format_action_line(
+    action: Action,
+    phase: str,
+    ok: bool | None,
+    *,
+    command_width: int | None,
+) -> str:
+    if phase != "completed":
+        status = STATUS["update"] if phase == "updated" else STATUS["running"]
+        return f"{status} {format_action_title(action, command_width=command_width)}"
+    status = action_status(action, completed=True, ok=ok)
+    suffix = action_suffix(action)
+    return (
+        f"{status} {format_action_title(action, command_width=command_width)}{suffix}"
+    )
+
+
+def is_command_log_line(line: str) -> bool:
+    return any(line.startswith(f"{symbol} `") for symbol in STATUS.values())
 
 
 def render_event_cli(event: TakopiEvent) -> list[str]:
@@ -139,32 +196,44 @@ def render_event_cli(event: TakopiEvent) -> list[str]:
             action = action_event.action
             if action.kind == "turn":
                 return []
-            status, suffix = phase_status_and_suffix(action_event)
-            title = format_action_title(action, command_width=MAX_PROGRESS_CMD_LEN)
-            return [f"{status} {title}{suffix}"]
+            return [
+                format_action_line(
+                    action_event.action,
+                    action_event.phase,
+                    action_event.ok,
+                    command_width=MAX_PROGRESS_CMD_LEN,
+                )
+            ]
         case _:
             return []
+
+
+@dataclass
+class RecentLine:
+    action_id: str
+    text: str
+    completed: bool = False
 
 
 class ExecProgressRenderer:
     def __init__(
         self,
+        engine: str,
         max_actions: int = 5,
         command_width: int | None = MAX_PROGRESS_CMD_LEN,
         resume_formatter: Callable[[ResumeToken], str] | None = None,
         show_title: bool = False,
     ) -> None:
-        self.max_actions = max_actions
+        self.max_actions = max(0, int(max_actions))
         self.command_width = command_width
-        self.recent_actions: deque[str] = deque(maxlen=max_actions)
-        self._recent_action_ids: deque[str] = deque(maxlen=max_actions)
-        self._recent_action_completed: deque[bool] = deque(maxlen=max_actions)
+        self.lines: deque[RecentLine] = deque(maxlen=self.max_actions)
         self.action_count = 0
-        self._started_counts: dict[str, int] = {}
+        self.seen_action_ids: set[str] = set()
         self.resume_token: ResumeToken | None = None
         self.session_title: str | None = None
         self._resume_formatter = resume_formatter
         self.show_title = show_title
+        self.engine = engine
 
     def note_event(self, event: TakopiEvent) -> bool:
         match event:
@@ -179,85 +248,89 @@ class ExecProgressRenderer:
                 if not action_id:
                     return False
                 completed = phase == "completed"
-                if completed:
-                    is_update = False
-                else:
-                    started_count = self._started_counts.get(action_id, 0)
-                    is_update = phase == "updated" or started_count > 0
-                    if started_count == 0:
-                        self.action_count += 1
-                        self._started_counts[action_id] = 1
-                    elif phase == "started":
-                        self._started_counts[action_id] = started_count + 1
-                    else:
-                        self._started_counts[action_id] = started_count
+                has_open = self.has_open_line(action_id)
+                is_update = phase == "updated" or (phase == "started" and has_open)
+                phase_for_line = "updated" if is_update and not completed else phase
+                line = format_action_line(
+                    action, phase_for_line, ok, command_width=self.command_width
+                )
+
+                if action_id not in self.seen_action_ids:
+                    self.seen_action_ids.add(action_id)
+                    self.action_count += 1
+
+                self.upsert_line(action_id, line=line, completed=completed)
+                return True
             case _:
                 return False
 
-        if completed:
-            count = self._started_counts.get(action_id, 0)
-            if count <= 0:
-                self.action_count += 1
-            elif count == 1:
-                self._started_counts.pop(action_id, None)
-            else:
-                self._started_counts[action_id] = count - 1
-
-        status = (
-            STATUS_UPDATE
-            if (is_update and not completed)
-            else action_status_symbol(action, completed=completed, ok=ok)
+    def has_open_line(self, action_id: str) -> bool:
+        return any(
+            line.action_id == action_id and not line.completed for line in self.lines
         )
-        title = format_action_title(action, command_width=self.command_width)
-        suffix = action_exit_suffix(action) if completed else ""
-        line = f"{status} {title}{suffix}"
 
-        self._append_action(action_id, completed=completed, line=line)
-        return True
-
-    def _append_action(self, action_id: str, *, completed: bool, line: str) -> None:
-        for i in range(len(self._recent_action_ids) - 1, -1, -1):
-            if (
-                self._recent_action_ids[i] == action_id
-                and not self._recent_action_completed[i]
-            ):
-                self.recent_actions[i] = line
-                if completed:
-                    self._recent_action_completed[i] = True
+    def upsert_line(self, action_id: str, *, line: str, completed: bool) -> None:
+        for i in range(len(self.lines) - 1, -1, -1):
+            existing = self.lines[i]
+            if existing.action_id == action_id and not existing.completed:
+                self.lines[i] = RecentLine(
+                    action_id=action_id,
+                    text=line,
+                    completed=existing.completed or completed,
+                )
                 return
+        self.lines.append(
+            RecentLine(action_id=action_id, text=line, completed=completed)
+        )
 
-        if len(self.recent_actions) >= self.max_actions:
-            self.recent_actions.popleft()
-            self._recent_action_ids.popleft()
-            self._recent_action_completed.popleft()
-
-        self.recent_actions.append(line)
-        self._recent_action_ids.append(action_id)
-        self._recent_action_completed.append(completed)
-
-    def render_progress(self, elapsed_s: float, label: str = "working") -> str:
+    def render_progress_parts(
+        self, elapsed_s: float, label: str = "working"
+    ) -> MarkdownParts:
         step = self.action_count or None
-        header = format_header(elapsed_s, step, label=self._label_with_title(label))
-        message = self._assemble(header, list(self.recent_actions))
-        return self._append_resume(message)
+        header = format_header(
+            elapsed_s,
+            step,
+            label=self.label_with_title(label),
+            engine=self.engine,
+        )
+        body = self.assemble_body([line.text for line in self.lines])
+        return MarkdownParts(header=header, body=body, footer=self.render_footer())
 
-    def render_final(self, elapsed_s: float, answer: str, status: str = "done") -> str:
+    def render_final_parts(
+        self, elapsed_s: float, answer: str, status: str = "done"
+    ) -> MarkdownParts:
         step = self.action_count or None
-        header = format_header(elapsed_s, step, label=self._label_with_title(status))
+        header = format_header(
+            elapsed_s,
+            step,
+            label=self.label_with_title(status),
+            engine=self.engine,
+        )
+        lines = [line.text for line in self.lines]
+        if status == "done":
+            lines = [line for line in lines if not is_command_log_line(line)]
+        body = self.assemble_body(lines)
         answer = (answer or "").strip()
-        message = header + ("\n\n" + answer if answer else "")
-        return self._append_resume(message)
+        if answer:
+            body = answer if not body else body + "\n\n" + answer
+        return MarkdownParts(header=header, body=body, footer=self.render_footer())
 
-    def _label_with_title(self, label: str) -> str:
+    def label_with_title(self, label: str) -> str:
         if self.show_title and self.session_title:
             return f"{label} ({self.session_title})"
         return label
 
-    def _append_resume(self, message: str) -> str:
+    def render_footer(self) -> str | None:
         if not self.resume_token or self._resume_formatter is None:
-            return message
-        return message + "\n\n" + self._resume_formatter(self.resume_token)
+            return None
+        return self._resume_formatter(self.resume_token)
+
+    @property
+    def recent_actions(self) -> list[str]:
+        return [line.text for line in self.lines]
 
     @staticmethod
-    def _assemble(header: str, lines: list[str]) -> str:
-        return header if not lines else header + "\n\n" + HARD_BREAK.join(lines)
+    def assemble_body(lines: list[str]) -> str | None:
+        if not lines:
+            return None
+        return HARD_BREAK.join(lines)
