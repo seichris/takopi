@@ -1,5 +1,16 @@
 # changelog
 
+## v0.11.0 (2026-01-08)
+
+### changes
+
+- add entrypoint-based plugins for engines/transports plus a `takopi plugins` command and public API docs [#71](https://github.com/banteg/takopi/pull/71)
+
+### fixes
+
+- create pi sessions under the run base dir [#68](https://github.com/banteg/takopi/pull/68)
+- skip git repo checks for codex runs [#66](https://github.com/banteg/takopi/pull/66)
+
 ## v0.10.0 (2026-01-08)
 
 ### changes
