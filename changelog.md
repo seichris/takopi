@@ -1,5 +1,21 @@
 # changelog
 
+## v0.16.0 (2026-01-12)
+
+### fixes
+
+- harden telegram file transfer handling [#84](https://github.com/banteg/takopi/pull/84)
+
+### changes
+
+- simplify runtime, config, and telegram internals [#85](https://github.com/banteg/takopi/pull/85)
+- refactor telegram boundary types [#90](https://github.com/banteg/takopi/pull/90)
+
+### docs
+
+- add tips section to user guide
+- rework readme
+
 ## v0.15.0 (2026-01-11)
 
 ### changes
